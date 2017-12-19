@@ -1,0 +1,16 @@
+﻿- Mỗi Client kết nối với máy chủ bằng 2 kết nối, 1 dùng để gửi dữ liệu, 1 dùng để nhận dữ liệu từ Server
+	+ sau khi kết nối và xác thực thành công thì Client tiến hành kết nối kết nối thứ 2 vào server
+	với thông điệp SOCKETRECEIVE->username của Client
+	+ server sẽ lấy nó và đưa vào Class Chatter
+- muốn tạo nhóm chat thì client nhắn trước thông điệp 
+	+ NEWGROUPCHAT->số lượng->nickname các thành viên(có dạng user1,user2,user3,... ví dụ L"x,xuantinfx,phuonguyen"
+	+ Server sau khi xử lí xong thành công thì trả về thông điệp NEWGROUPCHAT->ACCEPT -> id của group chat ngược lại
+	thì NEWGROUPCHAT -> DENY - >Nội dung lỗi
+- Tạo user mới thì client sẽ gửi thông điệp 
+	+ SIGNIN -> username
+	+ server tìm trong data nếu không có thì trả về ACCEPT
+	+ còn nếu đã tồn tại user thì trả về DENY và gửi tiếp Nội dung lỗi
+- Chức năng gửi text
+	+ mỗi thành viên muốn gửi text thì gửi thông điệp SENDTEXT -> id (gửi 4 byte) -> nội dung
+	+ lúc server nhận được SENDTEXT ->gọi hàm để nhận id(nhận 4 byte) -> nhận nội dung
+	->server tìm group mang ID là id, duyệt qua vector chatter và gửi nội cho tất cả chatter (SENDTEXT -> content)
