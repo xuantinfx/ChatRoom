@@ -15,6 +15,7 @@ BOOL OnCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct);
 VOID OnCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 VOID OnPaint(HWND hwnd);
 VOID OnDestroy(HWND hwnd);
+VOID OnClose(HWND hwnd);
 
 /*****************Khu vực define các chức năng*****************/
 #define NEWGROUPCHAT L"QUBCJSDNFKJKZLZKPXOCKLSSDLFJDJFKJSDKJKFDF"
@@ -26,6 +27,7 @@ VOID OnDestroy(HWND hwnd);
 #define LOGIN L"MKWHOQJFKJDFKJSKJEIUEIJFKJSSKDKGHJEKDJSJDJFJ"
 #define SOCKETRECEIVE L"WYUHKLSDJFKDSJKFJDSKFJJFSJFKDSJFKSJKFSW"
 #define SENDTEXT L"JHAJJAJAJHJQUYUQYUYUQYUYUDUUDUHDJHDJHDJH"
+#define SENDFILE L"JASJHDHJASKJHFJKHSAJKHDKLLJSADJKKLSAD"
 
 /*******************Khu vực khai báo biến toàn cục*******************/
 CSocket				ServerSocket; //khai báo biến server
@@ -47,7 +49,7 @@ DWORD WINAPI ClientConnect(LPVOID lpParame);
 VOID SendClient(CSocket *csocket, WCHAR* str);
 VOID UpdateCountClient(int count);
 VOID ReceiveAndSendText(CSocket *connectorReceive, WCHAR *_username);
-VOID OnClose(HWND hwnd);
+VOID ReceiveAndSendFile(CSocket *connectorReceive, WCHAR *_username);
 
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -386,7 +388,11 @@ DWORD WINAPI ClientConnect(LPVOID lpParame) {
 		/*****  đập và code lại mấy phần phía dưới này hết nha *****/
 
 		/***********************************************************/
-
+		//Yêu cầu gửi file (file nhị phân)
+		if (StrCmpW(message, SENDFILE) == 0)
+		{
+			ReceiveAndSendFile(connector, list_User[index]->username);
+		}
 		//yêu cầu gửi tin nhắn
 		if (StrCmpW(message, SENDTEXT) == 0) {
 			ReceiveAndSendText(connector, list_User[index]->username);
@@ -598,6 +604,61 @@ VOID ReceiveAndSendText(CSocket *connectorReceive,WCHAR *_username) {
 					list_GroupChat[i]->lMember[j]->sv_connectorSend->Attach(list_GroupChat[i]->lMember[j]->socketSendAttach);
 					SendClient(list_GroupChat[i]->lMember[j]->sv_connectorSend, SENDTEXT);
 					list_GroupChat[i]->lMember[j]->sv_connectorSend->Send(content, 400);
+					list_GroupChat[i]->lMember[j]->socketSendAttach = list_GroupChat[i]->lMember[j]->sv_connectorSend->Detach();
+				}
+			}
+			break;
+		}
+	}
+}
+
+//Hàm nhận và gửi file
+VOID ReceiveAndSendFile(CSocket *connectorReceive, WCHAR *_username) {
+	int id = 0;
+	CHAR content[200];
+	WCHAR fname[200];
+	unsigned long size;
+	//Nhận id từ client
+	connectorReceive->Receive(&id, 4);
+
+	//Nhận tên file từ client
+	connectorReceive->Receive(fname, 400);
+
+	//Nhận kích thước file từ client
+	connectorReceive->Receive(&size, sizeof(size));
+									  //tìm group mang ID = id để gửi
+									  //send
+	for (int i = 0; i < list_GroupChat.size(); i++) {
+		if (id == list_GroupChat[i]->id) {
+			for (int j = 0; j < list_GroupChat[i]->lMember.size(); j++) {
+				if (StrCmpW(list_GroupChat[i]->lMember[j]->username, _username) != 0) {
+					list_GroupChat[i]->lMember[j]->sv_connectorSend->Attach(list_GroupChat[i]->lMember[j]->socketSendAttach);
+					SendClient(list_GroupChat[i]->lMember[j]->sv_connectorSend, SENDFILE);
+
+					// Chi tiết gửi
+					list_GroupChat[i]->lMember[j]->sv_connectorSend->Send(fname, 400); //Gửi tên file
+					list_GroupChat[i]->lMember[j]->sv_connectorSend->Send(&size, sizeof(size));  //Gửi kích thước file
+					unsigned long count = 0;
+					while (true)
+					{
+						if (size - count >= 200)
+						{
+							//Nhận nội dung từng khối và gửi cho client
+							connectorReceive->Receive(content, 200);
+							list_GroupChat[i]->lMember[j]->sv_connectorSend->Send(content, 200);
+							count += 200;
+						}
+						else
+						{
+							//Gửi nội dung cuối của gói tin
+							int left = size - count;
+							connectorReceive->Receive(content, left);
+							list_GroupChat[i]->lMember[j]->sv_connectorSend->Send(content, left);
+							break;
+						}
+					}
+					//Kết thúc nội dung gửi
+
 					list_GroupChat[i]->lMember[j]->socketSendAttach = list_GroupChat[i]->lMember[j]->sv_connectorSend->Detach();
 				}
 			}

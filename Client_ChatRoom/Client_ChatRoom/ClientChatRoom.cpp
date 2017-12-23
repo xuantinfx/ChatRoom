@@ -21,6 +21,7 @@ WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
 #define LOGIN L"MKWHOQJFKJDFKJSKJEIUEIJFKJSSKDKGHJEKDJSJDJFJ"
 #define SOCKETRECEIVE L"WYUHKLSDJFKDSJKFJDSKFJJFSJFKDSJFKSJKFSW"
 #define SENDTEXT L"JHAJJAJAJHJQUYUQYUYUQYUYUDUUDUHDJHDJHDJH"
+#define SENDFILE L"JASJHDHJASKJHFJKHSAJKHDKLLJSADJKKLSAD"
 
 //Khai báo biến cho socket
 HWND		hwndtext;
@@ -40,6 +41,10 @@ DWORD WINAPI ClientReceive(LPVOID lpParame);
 BOOL InnitIPAndPort(WCHAR *fileName);
 VOID SendText();
 VOID ReceiveText();
+BOOL OpenFileDialog(HWND hwnd, WCHAR filename[]);
+VOID SendFile();
+VOID ReceiveFile();
+VOID wstrrev(WCHAR *des, WCHAR *sourch);
 
 
 // Forward declarations of functions included in this code module:
@@ -263,7 +268,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			case IDC_BTNSENT: //nhấn nút gửi
 			{
 
-				SendText();
+				//SendText();
+				SendFile();
 				/*ClientSent(&ClientSocketSend, SOCKETTEXT);
 				ClientSocketSend.Send(&id, 4);
 				WCHAR temp[200];
@@ -480,8 +486,14 @@ DWORD WINAPI ClientReceive(LPVOID lpParame) {
 				MessageBox(g_hWnd, temp, L"Thông báo", MB_OK);
 			}
 		}
+		//nhận yêu cầu gửi file của server
 		if (StrCmpW(temp, SENDTEXT) == 0) {
 			ReceiveText();
+		}
+		//Nhận tín hiệu gửi file của server
+		if (StrCmpW(temp, SENDFILE) == 0)
+		{
+			ReceiveFile();
 		}
 	}
 	ExitThread(0);
@@ -529,4 +541,149 @@ VOID ReceiveText() {
 
 	//hiển thị text nhận được lên màn hình
 	SetWindowText(hwndReceive, temp);
+}
+
+//hwnd: hwnd của window, có thể truyền NULL
+//filename: chuỗi được truyền vào để nhận tên file
+BOOL OpenFileDialog(HWND hwnd, WCHAR filename[])
+{
+	OPENFILENAMEW ofn = { 0 };
+	WCHAR szFile[260];
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = hwnd;
+	ofn.lpstrFile = szFile;
+	ofn.lpstrFile[0] = '\0';
+	ofn.nMaxFile = sizeof(szFile);
+	ofn.lpstrFilter = L"All Files (*.*)\0*.*\0";
+	ofn.nFilterIndex = 1;
+	ofn.lpstrFileTitle = NULL;
+	ofn.nMaxFileTitle = 0;
+	ofn.lpstrInitialDir = NULL;
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+	if (!GetOpenFileNameW(&ofn))
+		return FALSE;
+	wsprintf(filename, L"%s", ofn.lpstrFile);
+	//wcsncpy(chuoiten,ofn.lpstrFile,lstrlenW(ofn.lpstrFile));
+	return TRUE;
+}
+
+
+//Hàm gửi yêu cầu gửi file và gửi file :V
+VOID SendFile()
+{
+	//Yêu đường dẫn đến file và tên file
+	WCHAR filename[200];
+	if (OpenFileDialog(g_hWnd, filename) == FALSE) {
+		return;
+	}
+	//Gửi yêu cầu gửi file đến server
+	ClientSent(&ClientSocketSend, SENDFILE);
+	//Gửi ID đến server
+	ClientSocketSend.Send(&id, 4);
+
+	//Tạo tên file để gửi cho server
+	WCHAR name[200];
+	int j = 0;
+	int i;
+	for (i= lstrlenW(filename)- 1; i >= 0; i--)
+	{
+		if (filename[i] == L'\\')
+		{
+			name[j++] = L'\0';
+			//đảo ngược name
+			WCHAR revName[200];
+			wstrrev(revName, name);
+			ClientSent(&ClientSocketSend, revName);
+			break;
+		}
+		name[j++] = filename[i];
+	}
+	if (i < 0)
+		ClientSocketSend.Send(filename, sizeof(filename));
+
+	//Mở file
+	ifstream fi;
+	fi.open(filename, ios::in | ios::binary);
+	if (!fi)
+	{
+		MessageBox(g_hWnd, L"Thông báo", L"Đường dẫn hoặc tập tin không tồn tại", MB_OK);
+		return;
+	}
+
+	//Tính kích thước file
+	fi.seekg(0, ios::end);
+	unsigned long fsize = fi.tellg();
+	fi.seekg(0, ios::beg);
+
+	//Gửi kích thước file cho server
+	ClientSocketSend.Send(&fsize, sizeof(fsize));
+
+	//Tiến hành gửi file. Gửi nhiều lần mỗi lần 200 bytes
+	long count = 0;
+	while (true)
+	{
+		if (fsize - count >= 200)
+		{
+			CHAR buffer[200];
+			fi.read(buffer, 200);
+			//Gửi buffer đến server
+			ClientSocketSend.Send(buffer, 200);
+			count += 200;
+			continue;
+		}
+
+		CHAR buffer[200];
+		fi.read(buffer, fsize - count);
+		//Gửi buffer đến server
+		ClientSocketSend.Send(buffer, fsize - count);
+		break;
+	}
+	fi.close();
+}
+
+//Nhận dữ liệu từ server và ghi vào file mới
+VOID ReceiveFile()
+{
+	WCHAR ffname[200];
+	WCHAR fname[200];
+	unsigned long size;
+	CHAR content[200];
+
+	ClientSocketReceive.Receive(ffname, 400);
+	ClientSocketReceive.Receive(&size, sizeof(size));
+	
+	wsprintf(fname, L"%s",ffname);
+
+	ofstream fo;
+	fo.open(fname, ios::out | ios::binary);
+	if (!fo.is_open())
+	{
+		return;
+	}
+	unsigned long count = 0;
+
+	while (true)
+	{
+		if (size - count >= 200)
+		{
+			ClientSocketReceive.Receive(content, 200);
+			fo.write(content, 200);
+			count += 200;
+		}
+		else
+		{
+			ClientSocketReceive.Receive(content, size - count);
+			fo.write(content, size - count);
+			break;
+		}
+	}
+	fo.close();
+}
+
+VOID wstrrev(WCHAR *des, WCHAR *sourch) {
+	int j = 0;
+	for (int i = lstrlenW(sourch) - 1; i >= 0; i--) {
+		des[j++] = sourch[i];
+	}
+	des[j++] = L'\0';
 }
